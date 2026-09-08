@@ -1,0 +1,19 @@
+# ========================================================
+# NOTEPAD PLAYLIST CREATOR
+# Paste your song list below (one song per line).
+# Then press Ctrl+S (Save)!
+#
+# Supported formats:
+# - Artist - Song Title (e.g. Queen - Bohemian Rhapsody)
+# - Song Title - Artist (e.g. Blinding Lights - The Weeknd)
+# - Song Title by Artist (e.g. Shape of You by Ed Sheeran)
+# - Numbered / bulleted lists (e.g. 1. Hotel California)
+# ========================================================
+
+The Weeknd - Blinding Lights
+Queen - Bohemian Rhapsody
+Ed Sheeran - Shape of You
+The Kid LAROI - Stay
+Dua Lipa - Levitating
+Harry Styles - As It Was
+Eagles - Hotel California

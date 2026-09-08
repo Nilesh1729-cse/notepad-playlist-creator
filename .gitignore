@@ -1,0 +1,21 @@
+# Sensitive credentials and tokens - DO NOT COMMIT
+.env
+.spotify_cache
+.cache
+*.cache
+
+# Python cache & virtual environment
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Exports & temporary files
+exports/
+test_exports/
+
+# IDE files
+.vscode/
+.idea/
