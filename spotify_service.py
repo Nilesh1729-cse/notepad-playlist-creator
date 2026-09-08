@@ -9,22 +9,107 @@ from spotipy.oauth2 import SpotifyOAuth, SpotifyOauthError
 from config import Config, BASE_DIR
 from parser import parse_songs_from_text, format_playlist_meta, get_creation_timestamp
 
+import base64
+import urllib.parse
+import time
+import requests
+
+DEFAULT_SCOPE = "playlist-modify-public playlist-modify-private user-read-private"
+
 class SpotifyService:
-    def __init__(self):
-        self.scope = "playlist-modify-public playlist-modify-private user-read-private"
-        self.cache_path = str(BASE_DIR / ".spotify_cache")
+    def __init__(
+        self,
+        auth_token: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        redirect_uri: Optional[str] = None,
+        use_file_cache: bool = True
+    ):
+        self.scope = DEFAULT_SCOPE
+        self.client_id = client_id or Config.get_client_id()
+        self.client_secret = client_secret or Config.get_client_secret()
+        self.redirect_uri = redirect_uri or Config.get_redirect_uri()
+        self.cache_path = str(BASE_DIR / ".spotify_cache") if use_file_cache else None
         self._sp: Optional[spotipy.Spotify] = None
         self._user_id: Optional[str] = None
         self._user_name: Optional[str] = None
 
+        if auth_token:
+            self._sp = spotipy.Spotify(auth=auth_token)
+
+    @staticmethod
+    def get_oauth_url(client_id: str, redirect_uri: str, scope: str = DEFAULT_SCOPE, state: Optional[str] = None) -> str:
+        """Generate Spotify OAuth Authorization URL for web redirect."""
+        params = {
+            "client_id": client_id,
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "show_dialog": "true"
+        }
+        if state:
+            params["state"] = state
+        return f"https://accounts.spotify.com/authorize?{urllib.parse.urlencode(params)}"
+
+    @staticmethod
+    def exchange_code_for_token(client_id: str, client_secret: str, redirect_uri: str, code: str) -> Dict[str, Any]:
+        """Exchange authorization code for access_token and refresh_token."""
+        url = "https://accounts.spotify.com/api/token"
+        auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("utf-8")
+        headers = {
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri
+        }
+        response = requests.post(url, data=data, headers=headers, timeout=15)
+        if response.status_code != 200:
+            error_msg = response.text
+            try:
+                err_json = response.json()
+                error_msg = err_json.get("error_description", err_json.get("error", response.text))
+            except Exception:
+                pass
+            raise RuntimeError(f"Spotify token exchange failed ({response.status_code}): {error_msg}")
+
+        token_data = response.json()
+        token_data["expires_at"] = time.time() + token_data.get("expires_in", 3600)
+        return token_data
+
+    @staticmethod
+    def refresh_user_token(client_id: str, client_secret: str, refresh_token: str) -> Dict[str, Any]:
+        """Refresh expired access token."""
+        url = "https://accounts.spotify.com/api/token"
+        auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("utf-8")
+        headers = {
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token
+        }
+        response = requests.post(url, data=data, headers=headers, timeout=15)
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to refresh Spotify token ({response.status_code}): {response.text}")
+
+        token_data = response.json()
+        token_data["expires_at"] = time.time() + token_data.get("expires_in", 3600)
+        if "refresh_token" not in token_data:
+            token_data["refresh_token"] = refresh_token
+        return token_data
+
     def is_configured(self) -> bool:
-        return Config.is_spotify_configured()
+        return bool(self.client_id and self.client_secret and self.client_id != "your_spotify_client_id_here")
 
     def get_auth_manager(self) -> SpotifyOAuth:
         return SpotifyOAuth(
-            client_id=Config.SPOTIPY_CLIENT_ID,
-            client_secret=Config.SPOTIPY_CLIENT_SECRET,
-            redirect_uri=Config.SPOTIPY_REDIRECT_URI,
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            redirect_uri=self.redirect_uri,
             scope=self.scope,
             cache_path=self.cache_path,
             open_browser=True
@@ -32,6 +117,9 @@ class SpotifyService:
 
     def authenticate(self) -> spotipy.Spotify:
         """Authenticate with Spotify using cached token or OAuth browser flow."""
+        if self._sp is not None:
+            return self._sp
+
         if not self.is_configured():
             raise ValueError(
                 "Spotify credentials are not configured. Please set SPOTIPY_CLIENT_ID and "

@@ -15,7 +15,31 @@ elif ENV_EXAMPLE.exists():
 else:
     load_dotenv()
 
+def get_setting(key: str, default: str = "") -> str:
+    """Retrieve setting from Streamlit secrets (if in cloud) or environment/.env."""
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and key in st.secrets:
+            val = str(st.secrets[key]).strip()
+            if val:
+                return val
+    except Exception:
+        pass
+    return os.getenv(key, default).strip()
+
 class Config:
+    @classmethod
+    def get_client_id(cls) -> str:
+        return get_setting("SPOTIPY_CLIENT_ID", "")
+
+    @classmethod
+    def get_client_secret(cls) -> str:
+        return get_setting("SPOTIPY_CLIENT_SECRET", "")
+
+    @classmethod
+    def get_redirect_uri(cls) -> str:
+        return get_setting("SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
+
     SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID", "")
     SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET", "")
     SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
@@ -25,8 +49,8 @@ class Config:
     @classmethod
     def is_spotify_configured(cls) -> bool:
         """Check if Spotify API credentials are set."""
-        client_id = os.getenv("SPOTIPY_CLIENT_ID", "").strip()
-        client_secret = os.getenv("SPOTIPY_CLIENT_SECRET", "").strip()
+        client_id = cls.get_client_id()
+        client_secret = cls.get_client_secret()
         return bool(client_id and client_secret and client_id != "your_spotify_client_id_here")
 
     @classmethod

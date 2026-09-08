@@ -1,22 +1,23 @@
-import streamlit as st
+import os
+import time
 from datetime import datetime
 from pathlib import Path
-import time
+import streamlit as st
 
 from config import Config, BASE_DIR
 from parser import parse_songs_from_text, get_creation_timestamp, format_playlist_meta
-from spotify_service import SpotifyService
+from spotify_service import SpotifyService, DEFAULT_SCOPE
 from apple_music_service import AppleMusicService
 
-# Page Configuration
+# Set Streamlit Page Configuration
 st.set_page_config(
-    page_title="Notepad Playlist Creator",
+    page_title="Notepad to Spotify & Apple Music",
     page_icon="🎵",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling
+# Custom Styling for polished look
 st.markdown("""
 <style>
     .main-title {
@@ -28,7 +29,7 @@ st.markdown("""
     .sub-title {
         color: #A0A0A0;
         font-size: 1.05rem;
-        margin-bottom: 20px;
+        margin-bottom: 18px;
     }
     .timestamp-box {
         background-color: #1a1a1a;
@@ -37,13 +38,12 @@ st.markdown("""
         border-radius: 6px;
         margin-bottom: 20px;
     }
-    .track-card {
-        background-color: #242424;
-        padding: 12px;
+    .user-badge {
+        background-color: #181818;
+        border: 1px solid #282828;
+        padding: 10px 14px;
         border-radius: 8px;
-        margin-bottom: 8px;
-        display: flex;
-        align-items: center;
+        margin-bottom: 15px;
     }
     .stButton>button {
         border-radius: 8px;
@@ -52,74 +52,170 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Services
-spotify_service = SpotifyService()
+# -------------------------------------------------------------
+# CREDENTIALS & REDIRECT URI RESOLUTION
+# -------------------------------------------------------------
+def get_active_credentials():
+    """Resolves active Spotify credentials from session custom keys, st.secrets, or config."""
+    # 1. Check if user provided custom keys in this session
+    custom = st.session_state.get("custom_spotify_keys")
+    if custom and custom.get("client_id") and custom.get("client_secret"):
+        return custom["client_id"], custom["client_secret"], custom.get("redirect_uri", Config.get_redirect_uri())
+
+    # 2. Check Streamlit Cloud Secrets (st.secrets)
+    try:
+        if hasattr(st, "secrets"):
+            cid = str(st.secrets.get("SPOTIPY_CLIENT_ID", "")).strip()
+            sec = str(st.secrets.get("SPOTIPY_CLIENT_SECRET", "")).strip()
+            uri = str(st.secrets.get("SPOTIPY_REDIRECT_URI", "")).strip()
+            if cid and sec:
+                return cid, sec, uri or "http://localhost:8501"
+    except Exception:
+        pass
+
+    # 3. Fallback to Config / .env
+    return Config.get_client_id(), Config.get_client_secret(), Config.get_redirect_uri()
+
+client_id, client_secret, redirect_uri = get_active_credentials()
+
+# -------------------------------------------------------------
+# MULTI-TENANT OAUTH SESSION MANAGEMENT
+# -------------------------------------------------------------
+# Check for OAuth callback code from Spotify in URL query parameters
+query_code = st.query_params.get("code")
+if query_code:
+    with st.spinner("Connecting to your Spotify account..."):
+        try:
+            token_data = SpotifyService.exchange_code_for_token(
+                client_id=client_id,
+                client_secret=client_secret,
+                redirect_uri=redirect_uri,
+                code=query_code
+            )
+            st.session_state["spotify_token"] = token_data
+
+            # Fetch user profile immediately
+            sp_temp = SpotifyService(auth_token=token_data["access_token"])
+            profile = sp_temp.get_current_user_profile()
+            st.session_state["user_profile"] = profile
+
+            # Clear query params so refreshing the browser doesn't re-trigger
+            st.query_params.clear()
+            st.success("Connected successfully!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed to authenticate with Spotify: {e}")
+            st.query_params.clear()
+
+# Token automatic refresh check
+token_info = st.session_state.get("spotify_token")
+if token_info:
+    # Refresh if expiring within 60 seconds
+    if time.time() >= token_info.get("expires_at", 0) - 60:
+        try:
+            new_token = SpotifyService.refresh_user_token(
+                client_id=client_id,
+                client_secret=client_secret,
+                refresh_token=token_info["refresh_token"]
+            )
+            st.session_state["spotify_token"] = new_token
+            token_info = new_token
+        except Exception as e:
+            st.warning("Session expired. Please log in again.")
+            st.session_state.pop("spotify_token", None)
+            st.session_state.pop("user_profile", None)
+            token_info = None
+
+# Initialize Spotify client with this visitor's private session token
+user_spotify_service = SpotifyService(auth_token=token_info["access_token"]) if token_info else None
 apple_service = AppleMusicService()
 
-# --- SIDEBAR: Settings & Credentials ---
+# -------------------------------------------------------------
+# SIDEBAR: ACCOUNT & SETTINGS
+# -------------------------------------------------------------
 with st.sidebar:
-    st.image("https://storage.googleapis.com/pr-newsroom-wp/1/2023/05/Spotify_Primary_Logo_RGB_Green.png", width=140)
-    st.title("⚙️ App Settings")
+    st.image("https://storage.googleapis.com/pr-newsroom-wp/1/2023/05/Spotify_Primary_Logo_RGB_Green.png", width=130)
+    st.title("🎵 Account & Settings")
 
-    st.markdown("### 🔑 Spotify API Configuration")
-    if spotify_service.is_configured():
-        st.success("✅ Spotify credentials are active!")
+    user_profile = st.session_state.get("user_profile")
+    if token_info and user_profile:
+        st.markdown('<div class="user-badge">', unsafe_allow_html=True)
+        img_url = user_profile["images"][0]["url"] if user_profile.get("images") else None
+        if img_url:
+            st.image(img_url, width=54)
+        st.markdown(f"**Logged in as:**  \n**{user_profile['display_name']}** (`{user_profile['id']}`)")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.button("🚪 Log Out of Spotify", use_container_width=True):
+            st.session_state.pop("spotify_token", None)
+            st.session_state.pop("user_profile", None)
+            st.rerun()
     else:
-        st.warning("⚠️ Spotify API credentials needed.")
-
-    with st.expander("Setup / Update Spotify Keys", expanded=not spotify_service.is_configured()):
-        st.markdown("""
-        **How to get free Spotify keys:**
-        1. Visit [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-        2. Click **Create App**
-        3. Set Redirect URI to:  
-           `http://127.0.0.1:8888/callback`
-        4. Copy Client ID and Secret below:
-        """)
-        new_cid = st.text_input("Client ID", value=Config.SPOTIPY_CLIENT_ID if spotify_service.is_configured() else "", type="default")
-        new_sec = st.text_input("Client Secret", value=Config.SPOTIPY_CLIENT_SECRET if spotify_service.is_configured() else "", type="password")
-        new_uri = st.text_input("Redirect URI", value=Config.SPOTIPY_REDIRECT_URI)
-
-        if st.button("💾 Save Credentials", use_container_width=True):
-            if new_cid.strip() and new_sec.strip():
-                Config.save_spotify_credentials(new_cid.strip(), new_sec.strip(), new_uri.strip())
-                st.success("Credentials saved to .env! Refreshing...")
-                time.sleep(0.5)
-                st.rerun()
-            else:
-                st.error("Please provide both Client ID and Client Secret.")
+        st.info("👋 **Not connected.** Log in below or in the main page to create Spotify playlists.")
+        if client_id and client_secret:
+            auth_url = SpotifyService.get_oauth_url(client_id=client_id, redirect_uri=redirect_uri)
+            st.link_button("🟢 Log In with Spotify", auth_url, type="primary", use_container_width=True)
 
     st.divider()
-    st.markdown("### 🍎 Apple Music")
-    st.info(
-        "Apple Music exports generate standard `.m3u8` and iTunes text format files "
-        "with creation timestamps that can be imported directly into Apple Music on Windows, Mac, or iPhone."
-    )
 
-# --- MAIN CONTENT ---
+    # Expandable: Custom Keys for any user (Multi-tenant fallback)
+    with st.expander("🔑 Use Your Own Spotify Keys (Optional)"):
+        st.caption(
+            "If the default app hits Spotify's quota, or if you prefer using your own Spotify Developer App, "
+            "you can enter your keys here. They remain strictly in your private session."
+        )
+        custom_cid = st.text_input("Custom Client ID", value=st.session_state.get("custom_spotify_keys", {}).get("client_id", ""))
+        custom_sec = st.text_input("Custom Client Secret", type="password", value=st.session_state.get("custom_spotify_keys", {}).get("client_secret", ""))
+        custom_uri = st.text_input("Custom Redirect URI", value=st.session_state.get("custom_spotify_keys", {}).get("redirect_uri", redirect_uri))
+
+        col_save, col_reset = st.columns(2)
+        with col_save:
+            if st.button("Apply Keys", use_container_width=True):
+                if custom_cid.strip() and custom_sec.strip():
+                    st.session_state["custom_spotify_keys"] = {
+                        "client_id": custom_cid.strip(),
+                        "client_secret": custom_sec.strip(),
+                        "redirect_uri": custom_uri.strip()
+                    }
+                    st.success("Custom keys applied to your session!")
+                    st.rerun()
+                else:
+                    st.error("Enter both ID and Secret.")
+        with col_reset:
+            if st.button("Reset to Default", use_container_width=True):
+                st.session_state.pop("custom_spotify_keys", None)
+                st.rerun()
+
+    st.divider()
+    st.markdown("### 🍎 Apple Music & Free Tools")
+    st.caption("No account connection or keys required for Apple Music exports or Spotlistr.")
+
+# -------------------------------------------------------------
+# MAIN CONTENT AREA
+# -------------------------------------------------------------
 st.markdown('<div class="main-title">🎵 Notepad to Spotify & Apple Music</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">Paste songs from Notepad to instantly create a playlist tagged with the exact creation date & time.</div>', unsafe_allow_html=True)
 
-# Fetch and display current timestamp
+# Live creation timestamp banner
 ts_now = get_creation_timestamp()
 st.markdown(f"""
 <div class="timestamp-box">
     <b>🕒 Current Timestamp:</b> {ts_now['formatted_full']}<br>
-    <span style="color: #999; font-size: 0.9rem;">This date and time will be embedded in your playlist name and metadata automatically upon creation.</span>
+    <span style="color: #999; font-size: 0.9rem;">This date and time will be automatically recorded into your playlist title and description upon creation.</span>
 </div>
 """, unsafe_allow_html=True)
 
+# Main columns: Left for Notepad, Right for Settings
 col_input, col_meta = st.columns([2, 1])
 
 with col_meta:
     st.subheader("Playlist Settings")
     custom_title = st.text_input("Playlist Name (optional)", placeholder=f"Notepad Playlist - {ts_now['title_timestamp']}")
-    is_public = st.checkbox("Public Playlist on Spotify", value=True)
+    is_public = st.checkbox("Make Playlist Public on Spotify", value=True)
 
-    st.markdown("#### Quick Actions")
+    st.markdown("#### Quick Tools")
     load_sample = st.button("💡 Load Sample Songs", use_container_width=True)
-    
-    uploaded_file = st.file_uploader("📂 Or Upload a .txt Notepad File", type=["txt"])
+    uploaded_file = st.file_uploader("📂 Upload a .txt Notepad File", type=["txt"])
 
 with col_input:
     st.subheader("📝 Notepad (Paste Songs Here)")
@@ -127,13 +223,13 @@ with col_input:
     default_text = ""
     if load_sample:
         default_text = (
-            "Blinding Lights - The Weeknd\n"
-            "Stay - The Kid LAROI & Justin Bieber\n"
-            "Shape of You - Ed Sheeran\n"
-            "Levitating - Dua Lipa\n"
-            "As It Was - Harry Styles\n"
-            "Bohemian Rhapsody - Queen\n"
-            "Hotel California - Eagles"
+            "The Weeknd - Blinding Lights\n"
+            "Queen - Bohemian Rhapsody\n"
+            "Ed Sheeran - Shape of You\n"
+            "The Kid LAROI & Justin Bieber - Stay\n"
+            "Dua Lipa - Levitating\n"
+            "Harry Styles - As It Was\n"
+            "Eagles - Hotel California"
         )
     elif uploaded_file is not None:
         try:
@@ -144,102 +240,121 @@ with col_input:
     song_input = st.text_area(
         label="Song list",
         value=default_text,
-        height=320,
-        placeholder="Paste songs one per line, e.g.:\n1. The Weeknd - Blinding Lights\n2. Shape of You by Ed Sheeran\n3. Bohemian Rhapsody",
+        height=300,
+        placeholder="Paste songs one per line, e.g.:\n1. The Weeknd - Blinding Lights\n2. Shape of You by Ed Sheeran\n3. Bohemian Rhapsody - Queen",
         label_visibility="collapsed"
     )
 
-# Parsed summary
+# Parse songs
 parsed_songs = parse_songs_from_text(song_input)
 
 if song_input.strip():
-    st.caption(f"Found **{len(parsed_songs)}** valid song(s) in the notepad text.")
+    st.caption(f"Detected **{len(parsed_songs)}** unique song(s) ready to create.")
 
-# Action Buttons
+# -------------------------------------------------------------
+# ACTION BUTTONS & HANDLERS
+# -------------------------------------------------------------
 btn_col1, btn_col2 = st.columns(2)
 
 with btn_col1:
-    create_spotify = st.button("🟢 Create Spotify Playlist", type="primary", use_container_width=True, disabled=not bool(parsed_songs))
+    if token_info:
+        create_spotify = st.button(
+            f"🟢 Create Spotify Playlist ({len(parsed_songs)} songs)",
+            type="primary",
+            use_container_width=True,
+            disabled=not bool(parsed_songs)
+        )
+    else:
+        create_spotify = False
+        if client_id and client_secret:
+            auth_url = SpotifyService.get_oauth_url(client_id=client_id, redirect_uri=redirect_uri)
+            st.link_button(
+                "🟢 Log In to Spotify to Create Playlist",
+                auth_url,
+                type="primary",
+                use_container_width=True
+            )
+        else:
+            st.warning("Spotify Client ID / Secret not set in secrets or environment.")
 
 with btn_col2:
-    create_apple = st.button("🍎 Export for Apple Music", use_container_width=True, disabled=not bool(parsed_songs))
+    create_apple = st.button(
+        f"🍎 Export for Apple Music ({len(parsed_songs)} songs)",
+        use_container_width=True,
+        disabled=not bool(parsed_songs)
+    )
 
-# --- CREATE SPOTIFY PLAYLIST HANDLER ---
-if create_spotify:
-    if not spotify_service.is_configured():
-        st.error("⚠️ Spotify API credentials are not set! Please expand the sidebar to enter your Client ID and Client Secret.")
-    else:
-        with st.status("🎵 Creating Spotify playlist...", expanded=True) as status:
-            st.write(f"Capturing creation timestamp: **{ts_now['formatted_full']}**...")
-            
-            prog_bar = st.progress(0)
-            status_text = st.empty()
+# --- SPOTIFY PLAYLIST CREATION ---
+if create_spotify and user_spotify_service:
+    with st.status("🎵 Creating playlist on your Spotify account...", expanded=True) as status:
+        st.write(f"Captured creation timestamp: **{ts_now['formatted_full']}**...")
+        prog_bar = st.progress(0)
+        status_text = st.empty()
 
-            def progress_callback(idx, total, song, match):
-                prog_bar.progress(idx / total)
-                q = song.get("query", "")
-                if match:
-                    status_text.text(f"[{idx}/{total}] ✅ Found: {match['name']} - {match['artist']}")
-                else:
-                    status_text.text(f"[{idx}/{total}] ⚠️ Not found: {q}")
+        def progress_callback(idx, total, song, match):
+            prog_bar.progress(idx / total)
+            q = song.get("query", "")
+            if match:
+                status_text.text(f"[{idx}/{total}] ✅ Found: {match['name']} by {match['artist']}")
+            else:
+                status_text.text(f"[{idx}/{total}] ⚠️ Not found: {q}")
 
-            try:
-                result = spotify_service.create_playlist_from_songs(
-                    songs=parsed_songs,
-                    playlist_name=custom_title if custom_title.strip() else None,
-                    is_public=is_public,
-                    on_progress=progress_callback
-                )
-                status.update(label="🎉 Playlist created successfully!", state="complete", expanded=False)
-                
-                # Success Display
-                st.balloons()
-                st.success(f"🎉 **Playlist Created:** [{result['playlist_name']}]({result['playlist_url']})")
-                st.markdown(f"**📅 Date & Time Created:** `{result['created_at']}`")
-                st.markdown(f"**📊 Tracks Added:** `{result['matched_count']} / {result['total_submitted']}` tracks")
-                
-                st.link_button("🚀 Open in Spotify", result["playlist_url"], type="primary")
+        try:
+            result = user_spotify_service.create_playlist_from_songs(
+                songs=parsed_songs,
+                playlist_name=custom_title.strip() if custom_title.strip() else None,
+                is_public=is_public,
+                on_progress=progress_callback
+            )
+            status.update(label="🎉 Playlist created successfully!", state="complete", expanded=False)
 
-                # Track Breakdown
-                if result["matched_tracks"]:
-                    st.subheader("Matched Tracks")
-                    for t in result["matched_tracks"]:
-                        col_img, col_info = st.columns([1, 8])
-                        with col_img:
-                            if t.get("image_url"):
-                                st.image(t["image_url"], width=64)
-                        with col_info:
-                            st.markdown(f"**[{t['matched_title']}]({t['spotify_url']})**  \n*{t['matched_artist']}* — `{t['album']}`")
+            st.balloons()
+            st.success(f"🎉 **Playlist Created:** [{result['playlist_name']}]({result['playlist_url']})")
+            st.markdown(f"**📅 Timestamp:** `{result['created_at']}`")
+            st.markdown(f"**📊 Tracks Added:** `{result['matched_count']} / {result['total_submitted']}`")
 
-                if result["unmatched_songs"]:
-                    st.warning(f"Could not find matches for {len(result['unmatched_songs'])} song(s):")
-                    for u in result["unmatched_songs"]:
-                        st.write(f"• {u.get('raw', '')}")
+            st.link_button("🚀 Open in Spotify", result["playlist_url"], type="primary")
 
-            except Exception as e:
-                status.update(label="❌ Spotify API Policy Restriction", state="error")
-                err_str = str(e)
-                if "Active premium subscription required" in err_str or "PermissionError" in type(e).__name__:
-                    st.error("⚠️ **Spotify Premium Required for Developer Apps**: Spotify's API requires the owner of the Developer App to have an active Spotify Premium subscription.")
-                    st.info("💡 **Free Alternatives:**\n- Use **Spotlistr** below (100% free tool that creates Spotify playlists for Free accounts with no keys needed).\n- Or use **Export for Apple Music** below.")
-                    st.link_button("🌐 Open Spotlistr (Create on Free Spotify)", "https://www.spotlistr.com/search/textbox", type="primary")
-                else:
-                    st.error(f"Error: {e}")
+            # Track Breakdown
+            if result["matched_tracks"]:
+                st.subheader("Matched Tracks")
+                for t in result["matched_tracks"]:
+                    col_img, col_info = st.columns([1, 8])
+                    with col_img:
+                        if t.get("image_url"):
+                            st.image(t["image_url"], width=60)
+                    with col_info:
+                        st.markdown(f"**[{t['matched_title']}]({t['spotify_url']})**  \n*{t['matched_artist']}* — `{t['album']}`")
 
-# --- EXPORT APPLE MUSIC HANDLER ---
+            if result["unmatched_songs"]:
+                st.warning(f"Could not find matches for {len(result['unmatched_songs'])} song(s):")
+                for u in result["unmatched_songs"]:
+                    st.write(f"• {u.get('raw', '')}")
+
+        except Exception as e:
+            status.update(label="❌ Failed to create playlist", state="error")
+            err_str = str(e)
+            if "Active premium subscription required" in err_str or "403" in err_str:
+                st.error("⚠️ **Spotify Premium Required**: Spotify's API requires the app owner to have an active Spotify Premium subscription.")
+                st.info("💡 **Free Alternatives:**\n- Use **Spotlistr** below (100% free tool for Free Spotify accounts).\n- Or use **Export for Apple Music**.")
+                st.link_button("🌐 Open Spotlistr (Create on Free Spotify)", "https://www.spotlistr.com/search/textbox", type="primary")
+            else:
+                st.error(f"Error: {e}")
+
+# --- APPLE MUSIC EXPORT ---
 if create_apple:
     try:
-        res = apple_service.export_all_formats(song_input, playlist_name=custom_title if custom_title.strip() else None)
-        
-        st.success(f"🍎 **Apple Music Playlist Exported:** {res['playlist_name']}")
-        st.markdown(f"**📅 Timestamp:** `{res['created_at']}`")
+        res = apple_service.export_all_formats(song_input, playlist_name=custom_title.strip() if custom_title.strip() else None)
+
+        st.success(f"🍎 **Apple Music Playlist Ready:** {res['playlist_name']}")
+        st.markdown(f"**📅 Creation Timestamp:** `{res['created_at']}`")
         st.markdown(f"**📊 Total Songs:** `{res['total_songs']}`")
 
         col_dl1, col_dl2 = st.columns(2)
         with col_dl1:
             m3u8_content = Path(res["m3u8_path"]).read_text(encoding="utf-8")
             st.download_button(
-                label="📥 Download .M3U8 Playlist",
+                label="📥 Download .M3U8 Playlist File",
                 data=m3u8_content,
                 file_name=Path(res["m3u8_path"]).name,
                 mime="audio/x-mpegurl",
@@ -255,6 +370,6 @@ if create_apple:
                 use_container_width=True
             )
 
-        st.info("💡 **How to import:** In Apple Music or iTunes on Windows/Mac, go to **File > Library > Import Playlist...** and select either the `.m3u8` or `.txt` file.")
+        st.info("💡 **How to import:** In Apple Music or iTunes on Windows/Mac, go to **File > Library > Import Playlist...** and select either file.")
     except Exception as e:
         st.error(f"Error exporting for Apple Music: {e}")
