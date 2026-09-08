@@ -222,6 +222,10 @@ class SpotifyService:
                         "spotify_url": track.get("external_urls", {}).get("spotify", ""),
                         "preview_url": track.get("preview_url")
                     }
+            except spotipy.SpotifyException as sp_err:
+                if sp_err.http_status in (401, 403):
+                    raise sp_err
+                continue
             except Exception:
                 continue
 

@@ -264,9 +264,11 @@ with col_meta:
 with col_input:
     st.subheader("📝 Notepad (Paste Songs Here)")
 
-    default_text = ""
+    if "notepad_content" not in st.session_state:
+        st.session_state["notepad_content"] = ""
+
     if load_sample:
-        default_text = (
+        st.session_state["notepad_content"] = (
             "The Weeknd - Blinding Lights\n"
             "Queen - Bohemian Rhapsody\n"
             "Ed Sheeran - Shape of You\n"
@@ -275,19 +277,24 @@ with col_input:
             "Harry Styles - As It Was\n"
             "Eagles - Hotel California"
         )
-    elif uploaded_file is not None:
+        st.rerun()
+
+    if uploaded_file is not None:
         try:
-            default_text = uploaded_file.read().decode("utf-8")
+            st.session_state["notepad_content"] = uploaded_file.read().decode("utf-8")
         except Exception:
-            default_text = uploaded_file.read().decode("latin-1")
+            st.session_state["notepad_content"] = uploaded_file.read().decode("latin-1")
+        st.rerun()
 
     song_input = st.text_area(
         label="Song list",
-        value=default_text,
+        value=st.session_state["notepad_content"],
         height=300,
         placeholder="Paste songs one per line, e.g.:\n1. The Weeknd - Blinding Lights\n2. Shape of You by Ed Sheeran\n3. Bohemian Rhapsody - Queen",
         label_visibility="collapsed"
     )
+    # Persist typed/pasted content
+    st.session_state["notepad_content"] = song_input
 
 # Parse songs
 parsed_songs = parse_songs_from_text(song_input)
