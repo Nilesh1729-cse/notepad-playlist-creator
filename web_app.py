@@ -125,7 +125,17 @@ if query_code:
             st.success("Connected successfully!")
             st.rerun()
         except Exception as e:
-            st.error(f"Failed to authenticate with Spotify: {e}")
+            err_text = str(e)
+            if "The user is not registered for this application" in err_text or "not registered" in err_text.lower():
+                st.error("⚠️ **Spotify Development Mode Access Restriction**")
+                st.info(
+                    "Spotify apps in **Development Mode** only allow users who have been added to the app's whitelist.\n\n"
+                    "**How to get access in 30 seconds:**\n"
+                    "1. Ask the app owner to add your Spotify email under **User Management** in their [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).\n"
+                    "2. Or, expand **'Use Your Own Spotify Keys'** in the left sidebar to connect using your own Spotify Developer App."
+                )
+            else:
+                st.error(f"Failed to authenticate with Spotify: {e}")
             st.query_params.clear()
 
 # Token automatic refresh check
