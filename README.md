@@ -1,92 +1,84 @@
 # 🎵 Notepad to Spotify & Apple Music Playlist Creator
 
-Paste a list of songs into Notepad (or the app interface) and instantly generate a playlist on **Spotify** or **Apple Music**. 
+> **Paste song names into Notepad and instantly generate a Spotify or Apple Music playlist tagged with the exact creation date and time.**
 
-The app automatically fetches the exact **local date and time** when the playlist is created, embedding the timestamp directly in both the playlist title and description.
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://notepad-playlist-creator-ckpdtdsr3v4dzf3ulifgjx.streamlit.app)
 
----
-
-## ⚡ 3 Ways to Use It
-
-### 1. 📄 Live Windows Notepad Watcher (Most direct)
-Double-click `run_notepad_watcher.bat` (or run `python notepad_watcher.py`).
-- This opens native **Windows Notepad** (`songs_notepad.txt`).
-- Paste your songs into Notepad.
-- Hit **Ctrl + S** (Save).
-- The watcher immediately detects the save, fetches the current date & time, creates the playlist, and opens it directly in your browser!
-
-### 2. 🖥️ Desktop GUI App
-Double-click `run_gui.bat` (or run `python app_gui.py`).
-- A clean, modern desktop Notepad interface.
-- Live clock banner showing the exact timestamp that will be attached to the playlist.
-- Paste clipboard, load sample songs, or edit songs.
-- 1-Click buttons for **Spotify** and **Apple Music**.
-- Built-in Spotify API credentials setup window.
-
-### 3. 🌐 Web Dashboard (Streamlit)
-Double-click `run_web.bat` (or run `streamlit run web_app.py`).
-- Modern browser-based dashboard on `http://localhost:8501`.
-- Live timestamp clock and metadata preview.
-- Album cover art previews, track audio previews, and matched song status.
-- Direct link to open the newly generated playlist.
+🔗 **Live Web App:** [https://notepad-playlist-creator-ckpdtdsr3v4dzf3ulifgjx.streamlit.app](https://notepad-playlist-creator-ckpdtdsr3v4dzf3ulifgjx.streamlit.app)
 
 ---
 
-## 🕒 Automatic Date & Time Tagging
+## 🚀 Key Features
 
-Every playlist created captures the exact local system timestamp:
-- **Playlist Name**: `Notepad Playlist - YYYY-MM-DD HH:MM` (e.g., `Notepad Playlist - 2026-09-07 23:45`)
-- **Playlist Description**: `Created on Monday, September 07, 2026 at 11:45:12 PM from Notepad. Contains 15 tracks. Generated automatically by Notepad Playlist Creator.`
-- **Apple Music Exports**: Embeds `#DATE_CREATED`, `#TIMESTAMP_ISO`, and timestamp headers directly into the `.m3u8` and tab-separated `.txt` import files.
-
----
-
-## 🔑 2-Minute Spotify API Setup
-
-To allow the app to create playlists in your personal Spotify account:
-1. Log in to the free [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Click **Create App**:
-   - **App Name**: `Notepad Playlist Creator`
-   - **Redirect URI**: `http://127.0.0.1:8888/callback`
-   - Check the terms and click **Save**.
-3. Go to **Settings** on your new app and copy:
-   - **Client ID**
-   - **Client Secret**
-4. Paste them into `.env` (or enter them directly in the app's Settings popup):
-   ```env
-   SPOTIPY_CLIENT_ID=your_client_id_here
-   SPOTIPY_CLIENT_SECRET=your_client_secret_here
-   SPOTIPY_REDIRECT_URI=http://127.0.0.1:8888/callback
-   ```
-5. On first run, a browser tab will open asking you to log in to Spotify and grant playlist permissions. Once authorized, a token is cached locally so you won't need to log in again!
+- 📝 **Paste from Notepad:** Simply paste songs one per line (supports artist names, titles, numbered lists, and bullet points).
+- 🕒 **Automatic Date & Time Tagging:** Every playlist is tagged with the exact creation timestamp (e.g. `Notepad Playlist - 2026-09-08 22:30`) in both the title and playlist description.
+- 🟢 **Spotify Integration:** Directly matches tracks and creates playlists in your Spotify account.
+- 🍎 **Apple Music Export:** Generates `.m3u8` playlist files and iTunes/Apple Music text library import files with timestamp headers.
+- 👥 **Multi-User Cloud Support:** Isolated user sessions — multiple people can use the app without token collisions.
 
 ---
 
-## 🍎 Apple Music Support
+## ⚠️ Important Spotify Conditions & Limits
 
-Apple Music playlists can be generated in 2 formats:
-1. **`.m3u8` Playlist File**: Standard multimedia playlist file compatible with Apple Music, iTunes, VLC, etc.
-2. **Apple Music / iTunes Library Import (`.txt`)**: 
-   - In the Apple Music app or iTunes on Windows/Mac, go to:
-     `File` ➔ `Library` ➔ `Import Playlist...`
-   - Select the generated `.txt` or `.m3u8` file to instantly add all songs into a new playlist.
+Please note the following official Spotify Developer platform requirements:
+
+1. **Active Spotify Premium Required for App Owner:**  
+   Spotify's API requires the account that creates and hosts the Developer App to have an active **Spotify Premium** subscription.
+   
+2. **Spotify Development Mode User Whitelist (Max Allowed Users):**  
+   By default, new apps on Spotify operate in **Development Mode**, which strictly limits access to **a small whitelist of users (up to 5 to 25 users max)**.
+   - For a friend to log in, the app owner must add their **Spotify Email** in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) under the **User Management** tab.
+   - If an unlisted user tries to log in, Spotify blocks access with: *`The user is not registered for this application.`*
+
+3. **How to Bypass the User Limit (Self-Serve Keys):**  
+   Anyone can bypass the whitelist limit by clicking **"🔑 Use Your Own Spotify Keys"** in the sidebar and entering their own free Client ID and Secret (saved securely only in their private browser session).
+
+4. **100% Free Alternatives (No Premium / No Setup Needed):**  
+   - **Apple Music Export:** Click **Export for Apple Music** to immediately download `.m3u8` and `.txt` playlist files with full timestamps.
+   - **Spotlistr Tool:** Click **Open Spotlistr** to import your song list into a free Spotify account with zero developer setup.
 
 ---
 
 ## 📋 Supported Song Formats
 
-You can paste songs in almost any format into Notepad:
-- **Title and Artist**: `The Weeknd - Blinding Lights` or `Blinding Lights - The Weeknd`
-- **With "by"**: `Shape of You by Ed Sheeran`
-- **Numbered lists**:
-  ```text
-  1. Bohemian Rhapsody - Queen
-  2. Hotel California - Eagles
-  3. Stay by The Kid LAROI
-  ```
-- **Bulleted lists**:
-  ```text
-  - Levitating - Dua Lipa
-  * As It Was - Harry Styles
-  ```
-- **Plain titles**: `Yesterday`
+You can paste songs in almost any format:
+```text
+The Weeknd - Blinding Lights
+Queen - Bohemian Rhapsody
+Shape of You by Ed Sheeran
+1. Stay - The Kid LAROI & Justin Bieber
+- Levitating - Dua Lipa
+• Hotel California - Eagles
+```
+
+---
+
+## 💻 Running Locally
+
+If you prefer running the application on your local machine:
+
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Configure Credentials
+Copy `.env.example` to `.env` and enter your Spotify keys:
+```env
+SPOTIPY_CLIENT_ID=your_client_id
+SPOTIPY_CLIENT_SECRET=your_client_secret
+SPOTIPY_REDIRECT_URI=http://127.0.0.1:8888/callback
+```
+
+### 3. Choose Your Mode
+- **Live Windows Notepad Watcher:**  
+  Run `run_notepad_watcher.bat` (or `python notepad_watcher.py`). Open `songs_notepad.txt` in Windows Notepad, paste songs, and press **Ctrl+S** to auto-create!
+- **Desktop GUI:**  
+  Run `run_gui.bat` (or `python app_gui.py`).
+- **Web Dashboard:**  
+  Run `run_web.bat` (or `streamlit run web_app.py`).
+
+---
+
+## 📄 License
+MIT License. Created with ❤️ for music lovers.
