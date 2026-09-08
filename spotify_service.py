@@ -254,13 +254,24 @@ class SpotifyService:
         final_title = playlist_name.strip() if (playlist_name and playlist_name.strip()) else creation_meta["name"]
         final_description = creation_meta["description"]
 
-        # Create Spotify playlist
-        playlist = sp.user_playlist_create(
-            user=user_id,
-            name=final_title,
-            public=is_public,
-            description=final_description
-        )
+        # Create Spotify playlist using modern /me/playlists endpoint
+        try:
+            playlist = sp.current_user_playlist_create(
+                name=final_title,
+                public=is_public,
+                description=final_description
+            )
+        except Exception as create_err:
+            try:
+                playlist = sp.user_playlist_create(
+                    user=user_id,
+                    name=final_title,
+                    public=is_public,
+                    description=final_description
+                )
+            except Exception:
+                raise create_err
+
         playlist_id = playlist["id"]
         playlist_url = playlist.get("external_urls", {}).get("spotify", "")
 

@@ -368,12 +368,15 @@ if create_spotify and user_spotify_service:
         except Exception as e:
             status.update(label="❌ Failed to create playlist", state="error")
             err_str = str(e)
-            if "Active premium subscription required" in err_str or "403" in err_str:
-                st.error("⚠️ **Spotify Premium Required**: Spotify's API requires the app owner to have an active Spotify Premium subscription.")
-                st.info("💡 **Free Alternatives:**\n- Use **Spotlistr** below (100% free tool for Free Spotify accounts).\n- Or use **Export for Apple Music**.")
-                st.link_button("🌐 Open Spotlistr (Create on Free Spotify)", "https://www.spotlistr.com/search/textbox", type="primary")
+            if "Active premium subscription required" in err_str:
+                st.error("⚠️ **Spotify Billing Sync Delay**: Spotify's API gateway still reports that your app owner account needs an active Premium subscription. If you just upgraded or activated Premium recently, Spotify's Developer backend takes between 30 minutes to a couple of hours to update your billing status.")
+                st.info("💡 **In the meantime, you can use these free alternatives:**\n- Use **Spotlistr** below (100% free tool for Spotify accounts).\n- Or use **Export for Apple Music**.")
+                st.link_button("🌐 Open Spotlistr (Create on Spotify)", "https://www.spotlistr.com/search/textbox", type="primary")
             else:
-                st.error(f"Error: {e}")
+                st.error(f"❌ **Spotify API Error:** {err_str}")
+                with st.expander("🔍 Show Detailed Error Diagnostics"):
+                    import traceback
+                    st.code(traceback.format_exc())
 
 # --- APPLE MUSIC EXPORT ---
 if create_apple:

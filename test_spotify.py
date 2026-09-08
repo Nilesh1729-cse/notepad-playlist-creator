@@ -10,6 +10,10 @@ class TestSpotifyService(unittest.TestCase):
         # Mock Spotipy client
         mock_sp = MagicMock()
         mock_sp.current_user.return_value = {"id": "test_user_123", "display_name": "Test User"}
+        mock_sp.current_user_playlist_create.return_value = {
+            "id": "pl_123",
+            "external_urls": {"spotify": "https://open.spotify.com/playlist/pl_123"}
+        }
         mock_sp.user_playlist_create.return_value = {
             "id": "pl_123",
             "external_urls": {"spotify": "https://open.spotify.com/playlist/pl_123"}
@@ -51,7 +55,7 @@ class TestSpotifyService(unittest.TestCase):
         self.assertEqual(len(res["unmatched_songs"]), 1)
         
         # Verify spotipy calls
-        mock_sp.user_playlist_create.assert_called_once()
+        mock_sp.current_user_playlist_create.assert_called_once()
         mock_sp.playlist_add_items.assert_called_once()
 
 if __name__ == "__main__":
