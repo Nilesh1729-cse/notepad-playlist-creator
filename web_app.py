@@ -76,11 +76,32 @@ def get_active_credentials():
     # 3. Fallback to Config / .env
     return Config.get_client_id(), Config.get_client_secret(), Config.get_redirect_uri()
 
-client_id, client_secret, redirect_uri = get_active_credentials()
+raw_client_id, raw_client_secret, raw_redirect_uri = get_active_credentials()
+
+# Trailing slash preference in session
+if "use_trailing_slash" not in st.session_state:
+    st.session_state["use_trailing_slash"] = False
+
+# Compute active redirect URI
+base_uri = raw_redirect_uri.strip().rstrip("/")
+if st.session_state.get("override_redirect_uri"):
+    active_redirect_uri = st.session_state["override_redirect_uri"].strip()
+else:
+    active_redirect_uri = (base_uri + "/") if st.session_state["use_trailing_slash"] else base_uri
+
+client_id = raw_client_id
+client_secret = raw_client_secret
+redirect_uri = active_redirect_uri
 
 # -------------------------------------------------------------
 # MULTI-TENANT OAUTH SESSION MANAGEMENT
 # -------------------------------------------------------------
+# Check for OAuth errors from Spotify (e.g. user cancelled)
+query_error = st.query_params.get("error")
+if query_error:
+    st.error(f"Spotify authentication returned an error: {query_error}")
+    st.query_params.clear()
+
 # Check for OAuth callback code from Spotify in URL query parameters
 query_code = st.query_params.get("code")
 if query_code:
@@ -155,6 +176,19 @@ with st.sidebar:
         if client_id and client_secret:
             auth_url = SpotifyService.get_oauth_url(client_id=client_id, redirect_uri=redirect_uri)
             st.link_button("🟢 Log In with Spotify", auth_url, type="primary", use_container_width=True)
+
+        # Redirect URI Diagnostic helper
+        with st.expander("🛠️ Spotify Redirect URI Helper", expanded=True):
+            st.markdown("**Your Active Redirect URI is:**")
+            st.code(redirect_uri, language="text")
+
+            # Toggle trailing slash
+            slash_state = st.checkbox("Add trailing slash ( / ) to URI", value=st.session_state.get("use_trailing_slash", False))
+            if slash_state != st.session_state.get("use_trailing_slash", False):
+                st.session_state["use_trailing_slash"] = slash_state
+                st.rerun()
+
+            st.caption("💡 **Tip:** In Spotify Developer Dashboard > Settings > Redirect URIs, click **Add**, then scroll to the bottom and click **Save**.")
 
     st.divider()
 
